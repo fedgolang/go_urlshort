@@ -1,38 +1,32 @@
 package main
 
 import (
-	"bytes"
-	"net/http"
+	"fmt"
 
-	"github.com/fedgolang/go_urlshort/internal/lib/shortener"
+	"github.com/fedgolang/go_urlshort/internal/config"
+	"github.com/fedgolang/go_urlshort/internal/handlers"
 	"github.com/fedgolang/go_urlshort/internal/server"
+	"github.com/fedgolang/go_urlshort/internal/storage"
 	"github.com/go-chi/chi"
+	_ "modernc.org/sqlite"
 )
-
-const (
-	shortUrlLen = 7
-	storagePath = "./db/storage.db"
-)
-
-func postURL(w http.ResponseWriter, r *http.Request) {
-	var buf bytes.Buffer
-
-	_, err := buf.ReadFrom(r.Body) // Читаем данные из тела и запишем в буфер
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest) // Возвращаем 400 при наличии ошибки
-		return
-	}
-
-	shortUrl := shortener.RandomString(shortUrlLen) // Вызовем функцию RandomString для получения короткого урла
-
-}
 
 func main() {
-	// Запускаем сервер
+	cfg := config.MustLoad()
 	r := chi.NewRouter()
-	server.Sever(r)
+
+	// Открываем коннект к БД
+	storage, db := storage.NewStorage(cfg.StoragePath)
+	defer db.Close()
 
 	// Хендлер на добавление урла и его сокращения
-	r.Post("/", postURL)
+	r.Post("/", handlers.PostURL(storage))
+
+	// Хендлер на запрос полного урла по его сокращению
+	r.Get("/{shortUrl}", handlers.GetURL(storage))
+
+	// Запускаем сервер
+	fmt.Println("Сервер запустил")
+	server.Sever(r, cfg.HTTPAdress)
 
 }
