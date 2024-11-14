@@ -24,11 +24,25 @@ func PostURL(s *storage.Storage) http.HandlerFunc {
 			return
 		}
 
-		shortUrl := shortener.RandomString(shortUrlLen) // Вызовем функцию RandomString для получения короткого урла
+		urlString := buf.String()
 
-		err = s.AddUrls(buf.String(), shortUrl)
+		urlExist, shortUrl, err := s.IsUrlAlreadyExist(urlString)
 		if err != nil {
 			fmt.Println(err)
+			return
+		}
+
+		if urlExist {
+			_, _ = w.Write([]byte("Сокращение для данного URL уже есть: " + shortUrl))
+			return
+		}
+
+		shortUrl = shortener.RandomString(shortUrlLen) // Вызовем функцию RandomString для получения короткого урла
+
+		err = s.AddUrls(urlString, shortUrl)
+		if err != nil {
+			fmt.Println(err)
+			return
 		}
 
 		w.Header().Set("Content-Type", "text/plain")

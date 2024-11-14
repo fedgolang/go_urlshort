@@ -9,6 +9,26 @@ type Storage struct {
 	db *sql.DB
 }
 
+func (s Storage) IsUrlAlreadyExist(fullUrl string) (bool, string, error) {
+	stmt, err := s.db.Prepare("SELECT shortUrl FROM urls WHERE fullUrl =?")
+	if err != nil {
+		return false, "", err
+	}
+	defer stmt.Close()
+
+	var resURL string
+	err = stmt.QueryRow(fullUrl).Scan(&resURL)
+	if err != nil {
+		return false, "", err
+	}
+	if resURL != "" {
+		return true, resURL, nil
+	}
+
+	return false, "", nil
+
+}
+
 func NewStorage(dbPath string) (*Storage, *sql.DB) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
