@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -19,7 +20,11 @@ func (s Storage) IsUrlAlreadyExist(fullUrl string) (bool, string, error) {
 	var resURL string
 	err = stmt.QueryRow(fullUrl).Scan(&resURL)
 	if err != nil {
-		return false, "", err
+		if errors.Is(err, sql.ErrNoRows) {
+		} else {
+			return false, "", err
+		}
+
 	}
 	if resURL != "" {
 		return true, resURL, nil
@@ -70,4 +75,34 @@ func (s Storage) GetUrl(shortUrl string) (string, error) {
 	}
 
 	return resURL, nil
+}
+
+func (s *Storage) DeleteUrlFull(fullUrl string) error {
+	stmt, err := s.db.Prepare("DELETE FROM urls WHERE FullUrl =?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(fullUrl)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Storage) DeleteUrlShort(shortUrl string) error {
+	stmt, err := s.db.Prepare("DELETE FROM urls WHERE ShortUrl =?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(shortUrl)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

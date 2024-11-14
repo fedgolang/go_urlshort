@@ -47,6 +47,7 @@ func PostURL(s *storage.Storage) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("Сокращение успешно добавлено"))
 	}
 }
 

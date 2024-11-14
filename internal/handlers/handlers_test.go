@@ -2,20 +2,37 @@ package handlers
 
 import (
 	"bytes"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 
 	"github.com/fedgolang/go_urlshort/internal/config"
 	"github.com/fedgolang/go_urlshort/internal/storage"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	_ "modernc.org/sqlite"
 )
 
-func TestPostURL(t *testing.T) {
+func prepare() (*storage.Storage, *sql.DB, error) {
 	cfg := config.MustLoad()
-
 	storage, db := storage.NewStorage(cfg.StoragePath)
+
+	// Подготовим тестовые данные
+	err := storage.AddUrls("https://github.com/fedgolang/go-rest-api/blob/todo-list/precode.go", "Test")
+	if err != nil {
+		return nil, db, err
+	}
+
+	return storage, db, nil
+}
+
+func TestPostURL(t *testing.T) {
+	// Подготовим БД и тестовые данные
+	storage, db, err := prepare()
 	defer db.Close()
+	require.NoError(t, err)
 
 	type give struct {
 		contentType string
@@ -39,37 +56,109 @@ func TestPostURL(t *testing.T) {
 			},
 			want: want{
 				code:        200,
-				response:    `{"status":"ok"}`,
-				contentType: "application/json",
+				response:    `Сокращение для данного URL уже есть: Test`,
+				contentType: "text/plain",
+			},
+		},
+		{
+			name: "New url",
+			give: give{
+				contentType: "text/plain",
+				body:        "https://ya.ru/",
+			},
+			want: want{
+				code:        201,
+				response:    `Сокращение успешно добавлено`,
+				contentType: "text/plain",
 			},
 		},
 	}
-	for _, tests := range tests {
-		t.Run(tests.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, "/", bytes.NewBuffer([]byte(tests.give.body)))
 
+	// Запустим тесты
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBuffer([]byte(test.give.body)))
 			w := httptest.NewRecorder()
+
+			postURL := PostURL(storage)
+
+			postURL(w, r)
+
+			assert.Equal(t, w.Code, test.want.code)
+			assert.Equal(t, w.Body.String(), test.want.response)
 
 		})
 	}
+
+	// Почистим за собой тестовые данные, чтобы не флакать тесты
+	for _, test := range tests {
+		storage.DeleteUrlFull(test.give.body)
+	}
+
 }
 
 func TestGetURL(t *testing.T) {
-	type args struct {
-		s *storage.Storage
+	// Подготовим БД и тестовые данные
+	storage, db, err := prepare()
+	defer db.Close()
+	require.NoError(t, err)
+
+	type give struct {
+		shortUrl string
+	}
+	type want struct {
+		code        int
+		contentType string
+		Location    string
 	}
 	tests := []struct {
 		name string
-		args args
-		want http.HandlerFunc
+		give give
+		want want
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Success",
+			give: give{
+				shortUrl: "Test",
+			},
+			want: want{
+				code:        307,
+				contentType: "text/plain",
+				Location:    "https://github.com/fedgolang/go-rest-api/blob/todo-list/precode.go",
+			},
+		},
+		{
+			name: "Negative, url not in db",
+			give: give{
+				shortUrl: "some_url",
+			},
+			want: want{
+				code:        400,
+				contentType: "text/plain; charset=utf-8",
+				Location:    "",
+			},
+		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := GetURL(tt.args.s); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetURL() = %v, want %v", got, tt.want)
+	// Запустим тесты
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/"+test.give.shortUrl, nil)
+			w := httptest.NewRecorder()
+
+			GetURL := GetURL(storage)
+
+			GetURL(w, r)
+
+			assert.Equal(t, w.Code, test.want.code)
+			assert.Equal(t, w.Result().Header.Get("Content-Type"), test.want.contentType)
+			if test.want.Location != "" {
+				assert.Equal(t, w.Result().Header.Get("Location"), test.want.Location)
 			}
+
 		})
+	}
+	// Почистим за собой тестовые данные, чтобы не флакать тесты
+	for _, test := range tests {
+		storage.DeleteUrlShort(test.give.shortUrl)
 	}
 }
